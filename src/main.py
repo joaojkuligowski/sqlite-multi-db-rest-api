@@ -15,7 +15,7 @@ import sqlglot
 from sqlglot.optimizer import optimize
 from config import settings
 from api.types import QueryRequest, QueryResponse, ConvertedQueryRequest, ConvertedQueryResponse, OptimizedQueryRequest, OptimizedQueryResponse, LoadExtensionRequest
-
+from services.cache_service import QueryCache
 # Create directories if they don't exist
 os.makedirs(settings.DB_DIR, exist_ok=True)
 os.makedirs(settings.EXTENSIONS_DIR, exist_ok=True)
@@ -42,100 +42,6 @@ db_connections = {}  # Stores connections for each database
 db_extensions = {}   # Stores loaded extensions for each DB: {db_name: [extension_names]}
 query_results = {}   # Stores results for ongoing queries
 executor = ThreadPoolExecutor(max_workers=settings.MAX_WORKERS)
-
-# Cache structure
-class QueryCache:
-    def __init__(self):
-        self.cache = {}  # {hash: {result, timestamp, hits, last_hit_time}}
-        self.expiration_times = {}  # {hash: expiration_time}
-        self.lru_keys = []  # List for LRU implementation
-    
-    def get(self, cache_key):
-        """Retrieves an item from cache if it exists and is valid"""
-        if cache_key in self.cache:
-            cache_item = self.cache[cache_key]
-            expiry = self.expiration_times.get(cache_key, time.time() + settings.CACHE_EXPIRY)
-            
-            # Check if cache has expired
-            if time.time() < expiry:
-                # Update usage statistics
-                cache_item["hits"] += 1
-                cache_item["last_hit_time"] = time.time()
-                
-                # Update position in LRU list
-                if cache_key in self.lru_keys:
-                    self.lru_keys.remove(cache_key)
-                self.lru_keys.append(cache_key)
-                
-                return cache_item["result"], True
-            else:
-                # Remove expired item
-                self._remove_item(cache_key)
-        
-        return None, False
-    
-    def set(self, cache_key, result, ttl=None):
-        """Adds or updates an item in the cache"""
-        if len(self.cache) >= settings.MAX_CACHE_SIZE:
-            # Remove least recently used item
-            self._remove_lru_item()
-        
-        # Calculate expiration time
-        expiry_time = time.time() + (ttl if ttl is not None else settings.CACHE_EXPIRY)
-        
-        # Store result and metadata
-        self.cache[cache_key] = {
-            "result": result,
-            "timestamp": time.time(),
-            "hits": 1,
-            "last_hit_time": time.time()
-        }
-        self.expiration_times[cache_key] = expiry_time
-        
-        # Add to LRU list
-        if cache_key in self.lru_keys:
-            self.lru_keys.remove(cache_key)
-        self.lru_keys.append(cache_key)
-    
-    def _remove_item(self, cache_key):
-        """Removes an item from cache"""
-        if cache_key in self.cache:
-            del self.cache[cache_key]
-        if cache_key in self.expiration_times:
-            del self.expiration_times[cache_key]
-        if cache_key in self.lru_keys:
-            self.lru_keys.remove(cache_key)
-    
-    def _remove_lru_item(self):
-        """Removes the least recently used item"""
-        if self.lru_keys:
-            lru_key = self.lru_keys.pop(0)
-            self._remove_item(lru_key)
-    
-    def get_stats(self):
-        """Returns cache statistics"""
-        stats = {
-            "total_items": len(self.cache),
-            "hits_by_query": {k: v["hits"] for k, v in self.cache.items()},
-            "total_size": sum(len(json.dumps(v["result"])) for v in self.cache.values())
-        }
-        return stats
-    
-    def clear(self):
-        """Clears the entire cache"""
-        self.cache.clear()
-        self.expiration_times.clear()
-        self.lru_keys.clear()
-    
-    def cleanup_expired(self):
-        """Removes expired items from cache"""
-        current_time = time.time()
-        expired_keys = [
-            k for k, v in self.expiration_times.items() 
-            if current_time > v
-        ]
-        for key in expired_keys:
-            self._remove_item(key)
 
 # Cache instance
 query_cache = QueryCache()

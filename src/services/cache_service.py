@@ -2,7 +2,7 @@ import time
 import json
 import hashlib
 from typing import Dict, Any, List, Tuple, Optional
-from src.config import settings
+from config import settings
 
 class QueryCache:
     """
