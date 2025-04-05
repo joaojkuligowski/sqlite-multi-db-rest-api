@@ -1,0 +1,5 @@
+venv
+.env
+databases/*
+extensions/*
+__pycache__
