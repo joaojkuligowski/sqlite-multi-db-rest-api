@@ -154,7 +154,7 @@ To use SQLite extensions:
 
 ## Development
 
-### Running Tests
+### Running Tests (SOON)
 
 ```bash
 pytest tests/
